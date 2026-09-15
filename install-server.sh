@@ -15,11 +15,13 @@ set -euo pipefail
 REPO="${PULSE_REPO:-gokele/pulse-releases}"
 RELEASE="${PULSE_RELEASE:-latest}"
 PORT="${PULSE_PORT:-8899}"
+PORT_SET=0
 BINARY_URL=""
 
+# 二进制、配置、数据全在一个目录下，整个目录拷走就能搬到别处。
 INSTALL_DIR="/opt/pulse"
-DATA_DIR="/var/lib/pulse"
-CONF_DIR="/etc/pulse"
+CONF_FILE="${INSTALL_DIR}/server.env"
+DATA_DIR="${INSTALL_DIR}/data"
 SERVICE="pulse-server"
 
 usage() {
@@ -44,7 +46,7 @@ need_value() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --port) need_value "$@"; PORT="$2"; shift 2 ;;
+    --port) need_value "$@"; PORT="$2"; PORT_SET=1; shift 2 ;;
     --release) need_value "$@"; RELEASE="$2"; shift 2 ;;
     --repo) need_value "$@"; REPO="$2"; shift 2 ;;
     --binary-url) need_value "$@"; BINARY_URL="$2"; shift 2 ;;
@@ -147,24 +149,50 @@ if ! id -u pulse >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$INSTALL_DIR" "$DATA_DIR" "$CONF_DIR"
+mkdir -p "$INSTALL_DIR" "$DATA_DIR"
 FIRST_RUN=0
 [ -f "$DATA_DIR/pulse.db" ] || FIRST_RUN=1
 
 install -m 0755 "$TMP" "$INSTALL_DIR/pulse-server"
-chown -R pulse:pulse "$DATA_DIR"
-# 后台的「更新服务端」要在 /opt/pulse 里写临时文件并改名覆盖旧二进制，
-# 改名要的是目录写权限，所以把目录连同二进制交给服务账号。
-# 不需要就地升级的话，删掉下面这行并去掉 unit 里的 ReadWritePaths=/opt/pulse。
+# 二进制、配置、数据都在 $INSTALL_DIR 下，整个交给服务账号：
+# 后台的「更新服务端」要在这里写临时文件并改名覆盖旧二进制，
+# 改名要的是目录写权限。不需要就地升级的话，可以只 chown data 子目录，
+# 并去掉 unit 里的 ReadWritePaths。
 chown -R pulse:pulse "$INSTALL_DIR"
 
-# 端口等参数写进独立的 env 文件：升级会覆盖 unit，写在这里才不会丢
-if [ -f "$CONF_DIR/server.env" ]; then
-  sed -i "s|^PULSE_LISTEN=.*|PULSE_LISTEN=:${PORT}|" "$CONF_DIR/server.env"
+# 端口等参数写进独立的 env 文件：升级会覆盖 unit，写在这里才不会丢。
+#
+# 已存在的文件是用户自己维护的，默认一个字都不动 —— 只有显式传了 --port
+# 才去改那一行。否则「先放好配置再跑安装脚本」会被悄悄改回默认端口。
+if [ ! -f "$CONF_FILE" ]; then
+  cat > "$CONF_FILE" <<ENVFILE
+# Pulse 服务端配置。改完执行 systemctl restart ${SERVICE} 生效。
+# 其余设置（站点名、访客密码、上报节奏、保留天数…）都在后台改，不在这里。
+
+# 监听地址。只想本机访问就写 127.0.0.1:${PORT}，前面再用 Nginx 反代。
+PULSE_LISTEN=:${PORT}
+
+# 机密字段的加密密钥（64 位十六进制）。留空则用 data/secret.key。
+#PULSE_SECRET_KEY=
+
+# GitHub API 地址。访问不了 api.github.com 时可指向镜像。
+#PULSE_GITHUB_API=https://你的镜像/
+ENVFILE
+elif [ "$PORT_SET" = "1" ]; then
+  if grep -q '^PULSE_LISTEN=' "$CONF_FILE"; then
+    sed -i "s|^PULSE_LISTEN=.*|PULSE_LISTEN=:${PORT}|" "$CONF_FILE"
+  else
+    printf 'PULSE_LISTEN=:%s\n' "$PORT" >> "$CONF_FILE"
+  fi
 else
-  printf 'PULSE_LISTEN=:%s\n' "$PORT" > "$CONF_DIR/server.env"
+  # 沿用已有配置，把实际端口读出来用于最后的提示
+  # 贪婪匹配到最后一个冒号，IPv6 的 [::1]:8080 也能取对
+  EXISTING="$(sed -n 's|^PULSE_LISTEN=.*:\([0-9][0-9]*\)[[:space:]]*$|\1|p' "$CONF_FILE" | tail -1)"
+  [ -n "$EXISTING" ] && PORT="$EXISTING"
+  echo "沿用已有配置 $CONF_FILE（要改端口请带 --port）"
 fi
-chmod 0644 "$CONF_DIR/server.env"
+chmod 0640 "$CONF_FILE"
+chown pulse:pulse "$CONF_FILE"
 
 cat > "/etc/systemd/system/${SERVICE}.service" <<UNIT
 [Unit]
@@ -177,19 +205,17 @@ Type=simple
 User=pulse
 Group=pulse
 WorkingDirectory=${INSTALL_DIR}
-# 端口等参数放在 ${CONF_DIR}/server.env 里，改完 systemctl restart ${SERVICE} 即可，
-# 不用动这个单元文件（升级时它会被覆盖）。
-EnvironmentFile=-${CONF_DIR}/server.env
-Environment=PULSE_LISTEN=:${PORT}
-ExecStart=${INSTALL_DIR}/pulse-server -data ${DATA_DIR}
+# 配置由程序自己读取 ${CONF_FILE}（二进制同目录），
+# 这里不再用 Environment= / EnvironmentFile= 注入 ——
+# 这样不管是 systemd 拉起还是手动执行，行为完全一致。
+ExecStart=${INSTALL_DIR}/pulse-server
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=${DATA_DIR}
-# 后台的「更新服务端」要替换 ${INSTALL_DIR}/pulse-server，该目录必须可写
+# 数据、配置、二进制都在这个目录里，它必须可写
 ReadWritePaths=${INSTALL_DIR}
 # 面板只需要读写数据目录和监听端口，其余能力一律收掉
 PrivateDevices=true
@@ -223,5 +249,6 @@ if [ "$FIRST_RUN" = "1" ]; then
 fi
 echo "面板：http://<本机IP>:${PORT}      后台：http://<本机IP>:${PORT}/admin"
 echo "日志：journalctl -u ${SERVICE} -f"
-echo "改端口：编辑 ${CONF_DIR}/server.env 里的 PULSE_LISTEN，然后 systemctl restart ${SERVICE}"
-echo "忘记密码：systemctl stop ${SERVICE} && sudo -u pulse ${INSTALL_DIR}/pulse-server reset-password -data ${DATA_DIR} && systemctl start ${SERVICE}"
+echo "配置：${CONF_FILE}（改完 systemctl restart ${SERVICE}）"
+echo "忘记密码：systemctl stop ${SERVICE} && sudo -u pulse ${INSTALL_DIR}/pulse-server reset-password && systemctl start ${SERVICE}"
+echo "数据：${DATA_DIR}（整个 ${INSTALL_DIR} 拷走即可迁移）"

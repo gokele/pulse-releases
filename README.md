@@ -78,18 +78,45 @@ Pulse 把范围收得很窄，然后把这几件事做扎实。
 
 ### 服务端
 
-一条命令装好：
+服务端是**自包含**的 —— 二进制、配置、数据都在同一个目录，整个目录拷走就能搬到别处：
+
+```
+pulse/
+├── pulse-server     二进制
+├── server.env       配置（可选，程序启动时自己读）
+└── data/            数据库与加密密钥，首次启动自动创建
+```
+
+### 直接运行
+
+从 [Releases](../../releases) 下载 `pulse-server-linux-<arch>`，放哪儿都行：
+
+```bash
+chmod +x pulse-server-linux-amd64 && mv pulse-server-linux-amd64 pulse-server
+./pulse-server                    # 默认 :8899，数据落在同目录的 data/
+./pulse-server -listen :9000      # 或用参数覆盖
+```
+
+想固化配置就在旁边放一个 `server.env`（Release 里的 `server.env.example` 是带注释的模板）：
+
+```ini
+PULSE_LISTEN=127.0.0.1:8899
+```
+
+优先级：**命令行参数 > 环境变量 > server.env > 内置默认值**。
+
+### 装成 systemd 服务（可选）
+
+`install-server.sh` 只是把上面这套放进 `/opt/pulse` 再写好 systemd 单元，没有额外魔法：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install-server.sh \
   | sudo bash -s -- --port 8899
 ```
 
-脚本会按架构下载服务端二进制、**比对 `checksums.txt` 里的 SHA-256**，然后装好 systemd 服务并启动。
+脚本会按架构下载二进制、**比对 `checksums.txt` 里的 SHA-256**，然后启动服务。重复执行即为升级，`server.env` 与 `data/` 原样保留。
 
-机器访问不了 GitHub 的话，从 [Releases](../../releases) 下载 `pulse-<版本>-linux-<arch>.tar.gz`，解压后在目录里执行 `sudo ./install-server.sh` —— 脚本发现同目录有 `pulse-server` 就直接用，不再联网。
-
-重复执行同一条命令即为升级：二进制换掉，配置与数据保留。
+访问不了 GitHub 就下 `pulse-<版本>-linux-<arch>.tar.gz`，解压后在目录里执行 `sudo ./install-server.sh` —— 脚本发现同目录有 `pulse-server` 就直接用，不再联网。
 
 首次启动的管理员密码打印在日志里：
 
