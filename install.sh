@@ -2,7 +2,7 @@
 # pulse-agent 一键安装 / 卸载脚本
 #
 #   curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
-#     | sudo bash -s -- --server https://你的面板 --id hk-1 --token <该节点的密钥>
+#     | sudo bash -s -- --server <面板地址> --id <节点ID> --token <该节点的密钥>
 #
 #   curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
 #     | sudo bash -s -- --uninstall
