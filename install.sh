@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # pulse-agent 一键安装 / 卸载脚本
 #
-#   curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/gokele/pulse-agnes/main/install.sh \
 #     | sudo bash -s -- --server <面板地址> --id <节点ID> --token <该节点的密钥>
 #
-#   curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/gokele/pulse-agnes/main/install.sh \
 #     | sudo bash -s -- --uninstall
 #
-# 二进制与校验和都从 GitHub Release 取，面板只负责接收上报，不分发任何文件。
+# 重复执行即为升级：换掉二进制并重启服务，节点 ID 与密钥照旧。
+#
+# 二进制与校验和都从 Agent 的发布仓库取，面板只负责接收上报，不分发任何文件。
+# Agent 与服务端各自发版，所以这里是 pulse-agnes 而不是 pulse-releases。
 set -euo pipefail
 
-REPO="${PULSE_REPO:-gokele/pulse-releases}"
+REPO="${PULSE_REPO:-gokele/pulse-agnes}"
 RELEASE="${PULSE_RELEASE:-latest}"
 SERVER="${PULSE_SERVER:-}"
 TOKEN="${PULSE_TOKEN:-}"
@@ -34,7 +37,7 @@ usage() {
   --id ID           节点 ID，默认主机名
   --name NAME       节点显示名，默认同 ID
   --release TAG     指定版本，默认 latest
-  --repo OWNER/NAME 发布仓库，默认 ${REPO}
+  --repo OWNER/NAME Agent 发布仓库，默认 ${REPO}
   --binary-url URL  直接指定二进制地址（跳过 GitHub 查询与校验和比对）
   --insecure        跳过 TLS 证书校验
   --uninstall       卸载
@@ -228,7 +231,10 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICE"
+systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+# 必须是 restart 而不是 enable --now：重复执行脚本就是「升级」，
+# 服务已经在跑的话 --now 什么都不做，新二进制躺在磁盘上、跑的还是旧进程。
+systemctl restart "$SERVICE"
 sleep 1
 if systemctl is-active --quiet "$SERVICE"; then
   echo "pulse-agent 已启动：节点 ${NODE_ID}（${NODE_NAME}） → ${SERVER}"
