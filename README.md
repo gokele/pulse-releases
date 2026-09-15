@@ -132,7 +132,7 @@ journalctl -u pulse-server -n 30
 sudo ./install-server.sh --port 9000
 ```
 
-装好之后改端口：编辑 `/etc/pulse/server.env` 里的 `PULSE_LISTEN`，然后 `systemctl restart pulse-server`。
+装好之后改端口：编辑 `/opt/pulse/server.env` 里的 `PULSE_LISTEN`，然后 `systemctl restart pulse-server`。
 
 生产环境建议前面放个 Nginx/Caddy 做 HTTPS。
 
@@ -167,7 +167,7 @@ curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.
 | 负载历史保留 | 7 天 |
 | Ping 历史保留 | 14 天 |
 | 监听端口 | 8899 |
-| 数据目录 | `/var/lib/pulse` |
+| 数据目录 | 二进制同目录的 `data/`（脚本安装则是 `/opt/pulse/data`） |
 
 超过「原始精度」时长的历史会自动压缩（负载压成 10 分钟一个点，Ping 压成 5 分钟一个点），数据库不会无限增长。以上全部可以在后台改。
 
@@ -179,7 +179,7 @@ curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.
 
 ```bash
 systemctl stop pulse-server
-sudo -u pulse /opt/pulse/pulse-server reset-password -data /var/lib/pulse
+sudo -u pulse /opt/pulse/pulse-server reset-password
 systemctl start pulse-server
 ```
 
@@ -196,12 +196,26 @@ systemctl start pulse-server
 
 **数据存在哪，怎么迁移**
 
-全部在 `/var/lib/pulse`。迁移有两种方式：
+**数据跟着程序走** —— 都在二进制同目录的 `data/` 里（用脚本装的话就是 `/opt/pulse/data`）：
 
-- 后台「导出配置」拿到一个 JSON，在新机器上导入即可。**节点密钥会一起迁移**，原有 Agent 只要把 `--server` 指向新地址就能继续上报。
-- 或者直接下载完整数据库（含历史记录）搬过去。
+```
+/opt/pulse/
+├── pulse-server
+├── server.env        配置
+└── data/
+    ├── pulse.db      设置、节点、任务、历史记录
+    └── secret.key    机密字段的加密密钥
+```
 
-> 配置备份里包含节点密钥与访问密码，请妥善保管。
+迁移有三种方式，从省事到彻底：
+
+1. **整个目录拷过去**。停掉服务、`scp -r /opt/pulse` 到新机器、启动，什么都不用改。历史记录也在。
+2. **后台「导出配置」**拿到一个 JSON，在新机器导入。**节点密钥会一起迁移**，原有 Agent 只要把 `--server` 指向新地址就能继续上报。不含历史记录。
+3. **下载完整数据库**（含历史记录）搬过去。
+
+> ⚠️ 用第 2、3 种方式时，`data/secret.key` 要一起带走 —— 没有它，数据库里的节点密钥和访问密码就解不开了。建议和备份分开存放。
+>
+> 配置备份的 JSON 里包含节点密钥与访问密码明文，请妥善保管。
 
 **同一个数据目录里的 `secret.key` 是什么**
 
