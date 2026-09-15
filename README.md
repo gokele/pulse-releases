@@ -18,7 +18,7 @@ Pulse 把范围收得很窄，然后把这几件事做扎实。
 
 **节点卡片** —— 在线状态、地区旗标、CPU / 内存 / 磁盘占用、实时网速、累计流量、系统负载，离线节点整张卡片会变色，在一片卡片里一眼就能挑出来。
 
-**Ping 延迟** —— 电信 / 联通 / 移动三网曲线，自动按三网顺序排列。可以单独隐藏某条线，也能看丢包率。
+**Ping 延迟** —— 每个节点一组延迟曲线，名称和排序都跟后台配的 Ping 任务走。可以单独隐藏某条线，也能看丢包率。
 
 **负载历史** —— CPU、内存、磁盘、网络、连接数、负载的时序图，支持缩放和时间范围切换。
 
@@ -36,10 +36,11 @@ Pulse 把范围收得很窄，然后把这几件事做扎实。
 
 | | |
 |---|---|
-| **节点** | 新增 / 编辑 / 删除，名称、地区、分组、标签、备注、价格、币种、计费周期、到期时间、自动续费、隐藏 |
+| **节点** | 新增 / 编辑 / 删除，名称、地区、分组、标签、备注、价格、币种、计费周期、到期时间、自动续费、隐藏；**列表可拖动排序，前台按同样的顺序展示** |
 | **Ping 任务** | ICMP / TCP / HTTP 三种类型，自定义目标、间隔、超时、执行范围 |
 | **站点设置** | 站点名、描述、默认外观、访问密码、上报节奏、历史保留天数、汇率 |
 | **安全** | 修改用户名密码、绑定 GitHub 账号登录 |
+| **数据** | 数据库用量与各表占用，一键回收孤立数据、过期记录并压缩文件 |
 | **备份** | 导出/导入配置，或下载完整数据库 |
 
 几个值得一提的细节：
@@ -57,7 +58,8 @@ Pulse 把范围收得很窄，然后把这几件事做扎实。
 - 二进制约 7 MB，运行时内存占用二十几 MB
 - systemd 托管，**以非 root 的专用账号运行**，只保留 ICMP 需要的那一项权限
 - 采集全部走 `/proc`，不执行任何外部命令
-- **自动更新**（可选，默认关闭）：发现版本与面板不一致时自行下载新版本，**校验 SHA-256、试运行确认版本无误后**才替换自己并重启；任何一步不通过就保留原版本继续跑
+- **自动更新**（可选，默认关闭）：发现版本落后于 [Agent 仓库](https://github.com/gokele/pulse-agnes)的最新发布时自行下载，**校验 SHA-256、试运行确认版本无误后**才替换自己并重启；任何一步不通过就保留原版本继续跑
+- **和面板各自发版**：面板升级不会连带把节点上的 Agent 换掉，只有 Agent 真出新版才提示或更新
 
 ## 更新
 
@@ -156,20 +158,24 @@ sudo ./install-server.sh --port 9000
 在后台新建节点，点「安装命令」，把给出的命令粘到目标机器上执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/gokele/pulse-agnes/main/install.sh \
   | sudo bash -s -- --server <面板地址> --id <节点ID> --token <该节点的密钥>
 ```
 
 卸载：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/gokele/pulse-agnes/main/install.sh \
   | sudo bash -s -- --uninstall
 ```
 
-脚本会自己判断架构，从本仓库的 Release 下载对应的二进制，**并比对 `checksums.txt` 里的 SHA-256**，对不上就放弃安装。面板本身不分发任何文件，只负责接收上报。
+脚本会自己判断架构，从 Agent 仓库的 Release 下载对应的二进制，**并比对 `checksums.txt` 里的 SHA-256**，对不上就放弃安装。面板本身不分发任何文件，只负责接收上报。
+
+重复执行这条命令即为升级：换掉二进制并重启，节点 ID 与密钥照旧。
 
 机器访问不了 GitHub 的话，可以用 `--binary-url` 指定一个可达的镜像地址（此时会跳过校验和比对）。
+
+> Agent 发布在单独的仓库 **[gokele/pulse-agnes](https://github.com/gokele/pulse-agnes)**，和面板各自发版 —— 面板升级不会把各台机器上的 Agent 一起换掉。
 
 ---
 
@@ -264,9 +270,11 @@ Agent 目前只发布 Linux 版本。
 
 所有版本在 [Releases](../../releases)。每个版本包含：
 
-- `pulse-<版本>-linux-<arch>.tar.gz` —— 完整安装包（服务端 + Agent + 安装脚本）
-- `pulse-agent-linux-<arch>` —— 单独的 Agent 二进制
+- `pulse-<版本>-linux-<arch>.tar.gz` —— 服务端离线安装包（二进制 + 安装脚本 + 示例配置）
+- `pulse-server-linux-<arch>` —— 单独的服务端二进制，面板一键升级用的也是它
 - `checksums.txt` —— 上述所有文件的 SHA-256
+
+Agent 的二进制在 **[gokele/pulse-agnes](https://github.com/gokele/pulse-agnes/releases)**，版本号与这里无关。
 
 下载后建议核对一下：
 
