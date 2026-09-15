@@ -109,14 +109,20 @@ sudo ./install-server.sh --port 9000
 在后台新建节点，点「安装命令」，把给出的命令粘到目标机器上执行：
 
 ```bash
-curl -fsSL https://你的面板地址/install.sh | sudo bash -s -- --id hk-1 --token <该节点的密钥>
+curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
+  | sudo bash -s -- --server https://你的面板地址 --id hk-1 --token <该节点的密钥>
 ```
 
 卸载：
 
 ```bash
-curl -fsSL https://你的面板地址/install.sh | sudo bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install.sh \
+  | sudo bash -s -- --uninstall
 ```
+
+脚本会自己判断架构，从本仓库的 Release 下载对应的二进制，**并比对 `checksums.txt` 里的 SHA-256**，对不上就放弃安装。面板本身不分发任何文件，只负责接收上报。
+
+机器访问不了 GitHub 的话，可以用 `--binary-url` 指定一个可达的镜像地址（此时会跳过校验和比对）。
 
 ---
 
