@@ -92,12 +92,27 @@ pulse/
 从 [Releases](../../releases) 下载 `pulse-server-linux-<arch>`，放哪儿都行：
 
 ```bash
-chmod +x pulse-server-linux-amd64 && mv pulse-server-linux-amd64 pulse-server
-./pulse-server                    # 默认 :8899，数据落在同目录的 data/
-./pulse-server -listen :9000      # 或用参数覆盖
+mkdir -p /opt/pulse && cd /opt/pulse
+
+# 下载并校验
+curl -fsSL -O https://github.com/gokele/pulse-releases/releases/latest/download/pulse-server-linux-amd64
+curl -fsSL -O https://github.com/gokele/pulse-releases/releases/latest/download/checksums.txt
+sha256sum -c checksums.txt --ignore-missing
+
+mv pulse-server-linux-amd64 pulse-server
+chmod +x pulse-server          # ← 必须。下载下来是 644，不加这步会报 Permission denied
+
+./pulse-server                 # 默认 :8899，数据落在同目录的 data/
+./pulse-server -listen :9000   # 或用参数覆盖
 ```
 
-想固化配置就在旁边放一个 `server.env`（Release 里的 `server.env.example` 是带注释的模板）：
+想固化配置就在旁边放一个 `server.env`：
+
+```bash
+curl -fsSL -o server.env https://raw.githubusercontent.com/gokele/pulse-releases/main/server.env.example
+```
+
+改里面这行即可：
 
 ```ini
 PULSE_LISTEN=127.0.0.1:8899
@@ -184,6 +199,16 @@ systemctl start pulse-server
 ```
 
 会打印一条新的随机密码，同时让所有已登录设备退出。
+
+**报 `Permission denied` 启动不了**
+
+从 Release 下载的二进制没有执行权限（GitHub 附件不保留 Unix 执行位，下下来是 `644`）：
+
+```bash
+chmod +x pulse-server
+```
+
+用安装脚本装的不会遇到这个问题 —— 脚本内部是 `install -m 0755`。
 
 **面板放在 CDN 后面，Agent 上报失败**
 
