@@ -78,15 +78,20 @@ Pulse 把范围收得很窄，然后把这几件事做扎实。
 
 ### 服务端
 
-从 [Releases](../../releases) 下载对应架构的包：
+一条命令装好：
 
 ```bash
-tar -xzf pulse-<版本>-linux-amd64.tar.gz
-cd pulse-<版本>-linux-amd64
-sudo ./install-server.sh
+curl -fsSL https://raw.githubusercontent.com/gokele/pulse-releases/main/install-server.sh \
+  | sudo bash -s -- --port 8899
 ```
 
-脚本会装好 systemd 服务并启动。首次启动的管理员密码打印在日志里：
+脚本会按架构下载服务端二进制、**比对 `checksums.txt` 里的 SHA-256**，然后装好 systemd 服务并启动。
+
+机器访问不了 GitHub 的话，从 [Releases](../../releases) 下载 `pulse-<版本>-linux-<arch>.tar.gz`，解压后在目录里执行 `sudo ./install-server.sh` —— 脚本发现同目录有 `pulse-server` 就直接用，不再联网。
+
+重复执行同一条命令即为升级：二进制换掉，配置与数据保留。
+
+首次启动的管理员密码打印在日志里：
 
 ```bash
 journalctl -u pulse-server -n 30
